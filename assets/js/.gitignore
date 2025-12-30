@@ -1,0 +1,7 @@
+# Ignore sensitive or local files
+create_admin.php
+.env
+
+# Ignore OS files
+.DS_Store
+Thumbs.db
