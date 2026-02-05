@@ -2,7 +2,6 @@
 session_start();
 require_once 'config.php';
 
-// Redirect if already logged in
 if (isset($_SESSION['student_logged_in'])) {
     header("Location: student_dashboard.php");
     exit;
@@ -11,14 +10,15 @@ if (isset($_SESSION['student_logged_in'])) {
 $err = '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = trim($_POST['email'] ?? '');
     $usn = strtoupper(trim($_POST['usn'] ?? ''));
     $pass = $_POST['password'] ?? '';
     
-    if ($usn === '' || $pass === '') {
-        $err = "Please enter USN and password.";
+    if ($email === '' || $usn === '' || $pass === '') {
+        $err = "Please enter Email, USN and Password.";
     } else {
-        $stmt = $conn->prepare("SELECT id, password, name FROM students WHERE usn = ?");
-        $stmt->bind_param("s", $usn);
+        $stmt = $conn->prepare("SELECT id, password, name, usn FROM students WHERE email = ? AND usn = ?");
+        $stmt->bind_param("ss", $email, $usn);
         $stmt->execute();
         $res = $stmt->get_result();
         
@@ -26,8 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (password_verify($pass, $row['password'])) {
                 session_regenerate_id(true);
                 $_SESSION['student_logged_in'] = true;
-                $_SESSION['student_usn'] = $usn;
+                $_SESSION['student_usn'] = $row['usn'];
                 $_SESSION['student_name'] = $row['name'];
+                $_SESSION['student_email'] = $email;
                 $_SESSION['LAST_ACTIVITY'] = time();
                 header("Location: student_dashboard.php");
                 exit;
@@ -35,7 +36,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $err = "Invalid credentials.";
             }
         } else {
-            $err = "Invalid credentials.";
+            $err = "Invalid Email or USN combination.";
         }
         $stmt->close();
     }
@@ -51,27 +52,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link rel="stylesheet" href="assets/css/styles.css">
   <style>
     body {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #f5e6d3 0%, #d4af37 100%);
       min-height: 100vh;
     }
     .login-card {
       background: rgba(255, 255, 255, 0.98);
       backdrop-filter: blur(20px);
       border-radius: 25px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 20px 60px rgba(212, 175, 55, 0.3);
       animation: fadeInUp 0.8s ease-out;
     }
     .login-icon {
       width: 70px;
       height: 70px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #d4af37 0%, #f5e6d3 100%);
       border-radius: 15px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 2rem;
       margin: 0 auto 1.5rem;
-      box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+      box-shadow: 0 10px 30px rgba(212, 175, 55, 0.3);
     }
   </style>
 </head>
@@ -90,14 +91,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
         
         <form method="post" novalidate>
-          <div class="mb-4">
+          <div class="mb-3">
+            <label class="form-label">
+              <strong>Email Address</strong>
+              <span class="text-danger">*</span>
+            </label>
+            <input name="email" type="email" class="form-control form-control-lg" placeholder="your@email.com" required autocomplete="email">
+            <small class="text-muted">Your registered email</small>
+          </div>
+          
+          <div class="mb-3">
             <label class="form-label">
               <strong>USN</strong>
               <span class="text-danger">*</span>
             </label>
-            <input name="usn" class="form-control form-control-lg" placeholder="Enter your USN" required autocomplete="username">
+            <input name="usn" class="form-control form-control-lg" placeholder="Your USN" required autocomplete="username">
             <small class="text-muted">Your University Seat Number</small>
           </div>
+          
           <div class="mb-4">
             <label class="form-label">
               <strong>Password</strong>
@@ -105,8 +116,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </label>
             <input name="password" type="password" class="form-control form-control-lg" placeholder="Enter password" required autocomplete="current-password">
           </div>
+          
           <div class="d-grid mb-3">
-            <button type="submit" class="btn btn-primary btn-lg">
+            <button type="submit" class="btn btn-lg" style="background: linear-gradient(135deg, #d4af37 0%, #f5e6d3 100%); color: #000; font-weight: 600;">
               🔐 Login
             </button>
           </div>
@@ -120,6 +132,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               📝 New student? Register here
             </a>
           </p>
+          <p class="mb-2">
+            <a href="student_forgot_password.php" class="text-decoration-none fw-bold">
+              🔑 Forgot Password?
+            </a>
+          </p>
           <p class="mb-0">
             <a href="index.php" class="text-muted">← Back to Home</a>
           </p>
@@ -131,6 +148,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
-
-// Student login page.
-

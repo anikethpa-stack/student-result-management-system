@@ -10,76 +10,131 @@ if (!isset($_SESSION['admin_logged_in'])) {
 $info = '';
 $err = '';
 
-// Handle adding mark
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['add_mark'])) {
+// Handle bulk marks entry
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['bulk_add'])) {
     $usn = strtoupper(trim($_POST['usn'] ?? ''));
-    $name = trim($_POST['name'] ?? ''));
-    $subject = trim($_POST['subject'] ?? '');
-    $marks = intval($_POST['marks'] ?? 0);
+    $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $father_name = trim($_POST['father_name'] ?? '');
+    $class = trim($_POST['class'] ?? '');
     
-    if ($usn === '' || $name === '' || $subject === '') {
-        $err = "Please fill all fields.";
-    } elseif ($marks < 0 || $marks > 100) {
-        $err = "Marks must be between 0 and 100.";
+    if ($usn === '' || $name === '' || $email === '') {
+        $err = "USN, Name, and Email are required.";
     } else {
-        // Check if student exists
         $stmt = $conn->prepare("SELECT id FROM students WHERE usn = ?");
         $stmt->bind_param("s", $usn);
         $stmt->execute();
         $res = $stmt->get_result();
         
         if (!$res->fetch_assoc()) {
-            // Create student with default password
             $defaultPassHash = password_hash('changeme', PASSWORD_DEFAULT);
-            $ins = $conn->prepare("INSERT INTO students (usn, name, password) VALUES (?, ?, ?)");
-            $ins->bind_param("sss", $usn, $name, $defaultPassHash);
-            
-            if (!$ins->execute()) {
-                $err = "Failed to create student: " . $conn->error;
-            }
+            $ins = $conn->prepare("INSERT INTO students (usn, name, email, father_name, class, password) VALUES (?, ?, ?, ?, ?, ?)");
+            $ins->bind_param("ssssss", $usn, $name, $email, $father_name, $class, $defaultPassHash);
+            $ins->execute();
             $ins->close();
+        } else {
+            // Update existing student details
+            $upd = $conn->prepare("UPDATE students SET name=?, email=?, father_name=?, class=? WHERE usn=?");
+            $upd->bind_param("sssss", $name, $email, $father_name, $class, $usn);
+            $upd->execute();
+            $upd->close();
         }
         $stmt->close();
         
-        if ($err === '') {
-            // Insert result
-            $ins2 = $conn->prepare("INSERT INTO results (usn, subject, marks) VALUES (?, ?, ?)");
-            $ins2->bind_param("ssi", $usn, $subject, $marks);
+        // Insert/Update marks
+        $subjects = $_POST['subject'] ?? [];
+        $marks = $_POST['marks'] ?? [];
+        $max_marks_arr = $_POST['max_marks'] ?? [];
+        $added_count = 0;
+        
+        foreach ($subjects as $index => $subject) {
+            $subject = trim($subject);
+            $mark = intval($marks[$index] ?? 0);
+            $max_mark = intval($max_marks_arr[$index] ?? 100);
             
-            if ($ins2->execute()) {
-                $info = "Mark added successfully for $name ($usn).";
-            } else {
-                $err = "Failed to add mark: " . $conn->error;
+            // Validate max_marks (only 50 or 100 allowed)
+            if ($max_mark != 50 && $max_mark != 100) {
+                $max_mark = 100;
             }
-            $ins2->close();
+            
+            if ($subject !== '' && $mark >= 0 && $mark <= $max_mark) {
+                $ins2 = $conn->prepare("INSERT INTO results (usn, subject, marks, max_marks) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE marks = ?, max_marks = ?");
+                $ins2->bind_param("ssiiii", $usn, $subject, $mark, $max_mark, $mark, $max_mark);
+                if ($ins2->execute()) $added_count++;
+                $ins2->close();
+            }
+        }
+        
+        if ($added_count > 0) {
+            $info = "Successfully added/updated $added_count subject(s) for $name ($usn).";
+        } else {
+            $err = "No valid marks were added.";
         }
     }
 }
 
-// Handle delete
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_id'])) {
+// Handle EDIT marks
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_marks'])) {
+    $edit_id = intval($_POST['edit_id']);
+    $new_marks = intval($_POST['new_marks']);
+    $new_max_marks = intval($_POST['new_max_marks']);
+    
+    // Validate max_marks
+    if ($new_max_marks != 50 && $new_max_marks != 100) {
+        $new_max_marks = 100;
+    }
+    
+    if ($new_marks >= 0 && $new_marks <= $new_max_marks) {
+        $upd = $conn->prepare("UPDATE results SET marks = ?, max_marks = ? WHERE id = ?");
+        $upd->bind_param("iii", $new_marks, $new_max_marks, $edit_id);
+        if ($upd->execute()) {
+            $info = "Marks updated successfully!";
+        } else {
+            $err = "Failed to update marks.";
+        }
+        $upd->close();
+    } else {
+        $err = "Invalid marks. Marks must be between 0 and $new_max_marks.";
+    }
+}
+
+// Handle delete single subject
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_subject'])) {
     $delId = intval($_POST['delete_id']);
     $d = $conn->prepare("DELETE FROM results WHERE id = ?");
     $d->bind_param("i", $delId);
-    
-    if ($d->execute()) {
-        $info = "Record deleted successfully.";
-    } else {
-        $err = "Failed to delete: " . $conn->error;
-    }
+    if ($d->execute()) $info = "Subject deleted successfully.";
+    else $err = "Failed to delete: " . $conn->error;
     $d->close();
 }
 
-// Fetch all results
-$resAll = $conn->query("SELECT r.id, r.usn, s.name, r.subject, r.marks, r.created_at 
-                        FROM results r 
-                        LEFT JOIN students s ON r.usn = s.usn 
-                        ORDER BY r.created_at DESC");
+// Handle delete entire student
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['delete_student'])) {
+    $delUsn = $_POST['delete_usn'];
+    // Delete all results
+    $d1 = $conn->prepare("DELETE FROM results WHERE usn = ?");
+    $d1->bind_param("s", $delUsn);
+    $d1->execute();
+    $d1->close();
+    
+    // Delete student
+    $d2 = $conn->prepare("DELETE FROM students WHERE usn = ?");
+    $d2->bind_param("s", $delUsn);
+    if ($d2->execute()) $info = "Student and all records deleted successfully.";
+    else $err = "Failed to delete student: " . $conn->error;
+    $d2->close();
+}
 
-// Get statistics
+// Fetch students grouped with their results
+$studentsQuery = "SELECT DISTINCT s.usn, s.name, s.email, s.father_name, s.class 
+                  FROM students s 
+                  LEFT JOIN results r ON s.usn = r.usn 
+                  GROUP BY s.usn 
+                  ORDER BY s.usn DESC";
+$studentsResult = $conn->query($studentsQuery);
+
 $totalStudents = $conn->query("SELECT COUNT(DISTINCT usn) as count FROM results")->fetch_assoc()['count'] ?? 0;
 $totalMarks = $conn->query("SELECT COUNT(*) as count FROM results")->fetch_assoc()['count'] ?? 0;
-$avgMarks = $conn->query("SELECT AVG(marks) as avg FROM results")->fetch_assoc()['avg'] ?? 0;
 ?>
 <!doctype html>
 <html lang="en">
@@ -91,36 +146,119 @@ $avgMarks = $conn->query("SELECT AVG(marks) as avg FROM results")->fetch_assoc()
   <link rel="stylesheet" href="assets/css/styles.css">
   <style>
     body {
-      background: linear-gradient(135deg, #e0e7ff 0%, #fde2e4 100%);
+      background: linear-gradient(135deg, #f5e6d3 0%, #d4af37 100%);
     }
-    .stats-card {
-      border-left: 4px solid;
+    .excel-table {
+      background: white;
+      border-radius: 15px;
+      overflow: hidden;
+      box-shadow: 0 10px 40px rgba(212, 175, 55, 0.2);
+    }
+    .excel-table thead {
+      background: linear-gradient(135deg, #d4af37 0%, #f5e6d3 100%);
+      color: #000;
+      font-weight: 600;
+    }
+    .excel-row {
+      border-bottom: 1px solid #f0f0f0;
+    }
+    .excel-input {
+      border: 1px solid #e0e0e0;
+      border-radius: 5px;
+      padding: 0.5rem;
+      width: 100%;
+    }
+    .excel-input:focus {
+      outline: none;
+      border-color: #d4af37;
+      box-shadow: 0 0 0 2px rgba(212, 175, 55, 0.1);
+    }
+    .add-row-btn {
+      background: #d4af37;
+      color: #000;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .remove-row-btn {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 0.3rem 0.6rem;
+      border-radius: 5px;
+      cursor: pointer;
+    }
+    .student-card {
+      background: white;
+      border-radius: 15px;
+      margin-bottom: 1rem;
+      border: 2px solid #f0f0f0;
       transition: all 0.3s ease;
     }
-    .stats-card:hover {
-      transform: translateX(5px);
+    .student-card:hover {
+      border-color: #d4af37;
+      box-shadow: 0 5px 20px rgba(212, 175, 55, 0.2);
     }
-    .stats-icon {
-      width: 50px;
-      height: 50px;
-      border-radius: 12px;
+    .student-header {
+      background: linear-gradient(135deg, #f5e6d3 0%, #d4af37 100%);
+      padding: 1rem 1.5rem;
+      border-radius: 13px 13px 0 0;
+      cursor: pointer;
       display: flex;
       align-items: center;
-      justify-content: center;
-      font-size: 1.5rem;
+      justify-content: space-between;
+    }
+    .student-header:hover {
+      background: linear-gradient(135deg, #d4af37 0%, #f5e6d3 100%);
+    }
+    .student-body {
+      padding: 1.5rem;
+      display: none;
+    }
+    .student-body.show {
+      display: block;
+    }
+    .subject-badge {
+      background: #f8f9fa;
+      padding: 0.5rem 1rem;
+      border-radius: 8px;
+      margin-bottom: 0.5rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-left: 4px solid #10b981;
+    }
+    .no-subjects {
+      text-align: center;
+      padding: 2rem;
+      color: #6c757d;
+    }
+    .edit-form {
+      display: inline-flex;
+      gap: 5px;
+      align-items: center;
+    }
+    .edit-input {
+      width: 60px;
+      padding: 0.2rem 0.4rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
     }
   </style>
 </head>
 <body>
-<nav class="navbar navbar-expand-lg navbar-dark">
+
+<nav class="navbar navbar-expand-lg navbar-dark mb-4" style="background: linear-gradient(135deg, #232526 0%, #414345 100%);">
   <div class="container-fluid">
-    <a class="navbar-brand" href="#">
+    <span class="navbar-brand">
       <span style="font-size: 1.5rem;">👨‍🏫</span>
       Admin Dashboard
-    </a>
-    <div class="d-flex align-items-center">
-      <span class="text-white me-3">
-        <small>Welcome, Admin</small>
+    </span>
+    <div class="d-flex align-items-center gap-3">
+      <span class="badge" style="background: #d4af37; color: #000; font-size: 0.9rem;">
+        📊 <?php echo $totalStudents; ?> Students | <?php echo $totalMarks; ?> Records
       </span>
       <a class="btn btn-outline-light btn-sm" href="admin_logout.php">
         🚪 Logout
@@ -129,192 +267,324 @@ $avgMarks = $conn->query("SELECT AVG(marks) as avg FROM results")->fetch_assoc()
   </div>
 </nav>
 
-<!-- Statistics Cards -->
 <div class="container-fluid py-4">
-  <div class="row g-3 mb-4">
-    <div class="col-md-4">
-      <div class="card stats-card border-0" style="border-left-color: #667eea !important;">
-        <div class="card-body d-flex align-items-center">
-          <div class="stats-icon me-3" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-            👥
-          </div>
-          <div>
-            <h6 class="text-muted mb-1">Total Students</h6>
-            <h3 class="mb-0 fw-bold"><?php echo $totalStudents; ?></h3>
-          </div>
-        </div>
-      </div>
+  <?php if($info): ?>
+    <div class="alert alert-success alert-dismissible fade show" role="alert">
+      <strong>✅ Success!</strong> <?php echo htmlspecialchars($info); ?>
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
-    <div class="col-md-4">
-      <div class="card stats-card border-0" style="border-left-color: #11998e !important;">
-        <div class="card-body d-flex align-items-center">
-          <div class="stats-icon me-3" style="background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);">
-            📊
-          </div>
-          <div>
-            <h6 class="text-muted mb-1">Total Records</h6>
-            <h3 class="mb-0 fw-bold"><?php echo $totalMarks; ?></h3>
-          </div>
-        </div>
-      </div>
+  <?php endif; ?>
+  
+  <?php if($err): ?>
+    <div class="alert alert-danger alert-dismissible fade show" role="alert">
+      <strong>❌ Error!</strong> <?php echo htmlspecialchars($err); ?>
+      <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     </div>
-    <div class="col-md-4">
-      <div class="card stats-card border-0" style="border-left-color: #f093fb !important;">
-        <div class="card-body d-flex align-items-center">
-          <div class="stats-icon me-3" style="background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);">
-            ⭐
-          </div>
-          <div>
-            <h6 class="text-muted mb-1">Average Marks</h6>
-            <h3 class="mb-0 fw-bold"><?php echo round($avgMarks, 1); ?>%</h3>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+  <?php endif; ?>
 
-  <div class="row g-4">
-    <div class="col-lg-5">
-      <div class="card mb-3 fade-in">
-        <div class="card-header bg-primary text-white d-flex align-items-center">
-          <span class="me-2" style="font-size: 1.3rem;">➕</span>
-          <strong>Add Student Mark</strong>
+  <div class="row">
+    <!-- Left Panel - Entry Form -->
+    <div class="col-lg-5 mb-4">
+      <div class="card border-0 shadow-sm">
+        <div class="card-header text-white" style="background: linear-gradient(135deg, #d4af37 0%, #f5e6d3 100%); color: #000 !important;">
+          <strong>➕ Add/Update Student Marks</strong>
         </div>
         <div class="card-body">
-          <?php if($info): ?>
-            <div class="alert alert-success alert-dismissible fade show">
-              <strong>✅ Success!</strong> <?php echo htmlspecialchars($info); ?>
-              <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+          <form method="post">
+            <h6 class="mb-3">👤 Student Information</h6>
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label small fw-bold">USN (University Seat Number) <span class="text-danger">*</span></label>
+                <input name="usn" id="usn_input" class="form-control" placeholder="e.g., 1MS21CS001" required>
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label small fw-bold">Email <span class="text-danger">*</span></label>
+                <input name="email" type="email" class="form-control" placeholder="student@email.com" required>
+              </div>
             </div>
-          <?php endif; ?>
-          
-          <?php if($err): ?>
-            <div class="alert alert-danger alert-dismissible fade show">
-              <strong>❌ Error!</strong> <?php echo htmlspecialchars($err); ?>
-              <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label small fw-bold">Full Name <span class="text-danger">*</span></label>
+                <input name="name" class="form-control" placeholder="Student Name" required>
+              </div>
+              <div class="col-md-6 mb-3">
+                <label class="form-label small fw-bold">Father's Name</label>
+                <input name="father_name" class="form-control" placeholder="Father's name">
+              </div>
             </div>
-          <?php endif; ?>
-          
-          <form method="post" novalidate class="needs-validation">
-            <div class="mb-3">
-              <label class="form-label">
-                <strong>USN</strong>
-                <span class="text-danger">*</span>
-              </label>
-              <input name="usn" class="form-control" placeholder="e.g., 1MS21CS001" required>
-              <small class="text-muted">University Seat Number</small>
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label class="form-label small fw-bold">Class</label>
+                <input name="class" class="form-control" placeholder="e.g., 6">
+              </div>
             </div>
-            <div class="mb-3">
-              <label class="form-label">
-                <strong>Student Name</strong>
-                <span class="text-danger">*</span>
-              </label>
-              <input name="name" class="form-control" placeholder="e.g., John Doe" required>
+
+            <hr>
+            <h6 class="mb-3">📚 Subjects & Marks</h6>
+
+            <div class="excel-table">
+              <table class="table table-sm mb-0">
+                <thead>
+                  <tr>
+                    <th width="5%">#</th>
+                    <th width="45%">Subject Name</th>
+                    <th width="20%">Marks</th>
+                    <th width="20%">Max Marks</th>
+                    <th width="10%"></th>
+                  </tr>
+                </thead>
+                <tbody id="marksTable">
+                  <tr class="excel-row">
+                    <td class="text-center">1</td>
+                    <td><input type="text" name="subject[]" class="excel-input" placeholder="e.g., ODIA"></td>
+                    <td><input type="number" name="marks[]" class="excel-input" min="0" max="100" placeholder="0-100"></td>
+                    <td>
+                      <select name="max_marks[]" class="excel-input">
+                        <option value="50">50</option>
+                        <option value="100" selected>100</option>
+                      </select>
+                    </td>
+                    <td></td>
+                  </tr>
+                  <tr class="excel-row">
+                    <td class="text-center">2</td>
+                    <td><input type="text" name="subject[]" class="excel-input" placeholder="e.g., ENGLISH"></td>
+                    <td><input type="number" name="marks[]" class="excel-input" min="0" max="100" placeholder="0-100"></td>
+                    <td>
+                      <select name="max_marks[]" class="excel-input">
+                        <option value="50">50</option>
+                        <option value="100" selected>100</option>
+                      </select>
+                    </td>
+                    <td></td>
+                  </tr>
+                  <tr class="excel-row">
+                    <td class="text-center">3</td>
+                    <td><input type="text" name="subject[]" class="excel-input" placeholder="e.g., MATHEMATICS"></td>
+                    <td><input type="number" name="marks[]" class="excel-input" min="0" max="100" placeholder="0-100"></td>
+                    <td>
+                      <select name="max_marks[]" class="excel-input">
+                        <option value="50">50</option>
+                        <option value="100" selected>100</option>
+                      </select>
+                    </td>
+                    <td></td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
-            <div class="mb-3">
-              <label class="form-label">
-                <strong>Subject</strong>
-                <span class="text-danger">*</span>
-              </label>
-              <input name="subject" class="form-control" placeholder="e.g., Mathematics" required>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">
-                <strong>Marks</strong>
-                <span class="text-danger">*</span>
-              </label>
-              <input name="marks" type="number" min="0" max="100" class="form-control" placeholder="0-100" required>
-              <small class="text-muted">Enter marks out of 100</small>
-            </div>
-            <div class="d-grid">
-              <button name="add_mark" class="btn btn-primary btn-lg">
-                ➕ Add Mark
-              </button>
+
+            <div class="mt-3 d-flex gap-2">
+              <button type="button" class="add-row-btn" onclick="addRow()">➕ Add More Subjects</button>
+              <button type="submit" name="bulk_add" class="btn btn-success">💾 Save All Marks</button>
             </div>
           </form>
         </div>
       </div>
-      
-      <div class="alert alert-info border-0">
-        <div class="d-flex">
-          <div class="me-2" style="font-size: 1.5rem;">💡</div>
-          <div>
-            <strong>Quick Tip:</strong>
-            <small class="d-block mt-1">
-              If a student doesn't exist, they will be created automatically with password <code>changeme</code>. 
-              Ask them to change it after first login.
-            </small>
-          </div>
-        </div>
-      </div>
     </div>
-    
+
+    <!-- Right Panel - Students List -->
     <div class="col-lg-7">
-      <div class="card fade-in">
-        <div class="card-header bg-secondary text-white d-flex align-items-center">
-          <span class="me-2" style="font-size: 1.3rem;">📊</span>
-          <strong>All Marks</strong>
-          <?php if($totalMarks > 0): ?>
-            <span class="badge bg-light text-dark ms-auto"><?php echo $totalMarks; ?> records</span>
-          <?php endif; ?>
+      <div class="card border-0 shadow-sm">
+        <div class="card-header text-white d-flex justify-content-between align-items-center" style="background: linear-gradient(135deg, #8B7355 0%, #5D4E37 100%);">
+          <strong>👥 All Students (<?php echo $totalStudents; ?>)</strong>
+          <small>Click on student to expand/collapse</small>
         </div>
-        <div class="card-body p-0">
-          <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
-            <table class="table table-hover mb-0">
-              <thead style="position: sticky; top: 0; z-index: 10;">
-                <tr>
-                  <th>USN</th>
-                  <th>Name</th>
-                  <th>Subject</th>
-                  <th>Marks</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                <?php if ($resAll && $resAll->num_rows > 0): ?>
-                  <?php while($row = $resAll->fetch_assoc()): ?>
-                    <tr>
-                      <td><span class="badge bg-light text-dark"><?php echo htmlspecialchars($row['usn']); ?></span></td>
-                      <td><strong><?php echo htmlspecialchars($row['name']); ?></strong></td>
-                      <td><?php echo htmlspecialchars($row['subject']); ?></td>
-                      <td>
-                        <?php 
-                          $marks = (int)$row['marks'];
-                          $color = $marks >= 75 ? 'success' : ($marks >= 50 ? 'warning' : 'danger');
-                        ?>
-                        <span class="badge bg-<?php echo $color; ?> px-3 py-2">
-                          <?php echo $marks; ?>/100
-                        </span>
-                      </td>
-                      <td>
-                        <form method="post" style="display:inline" onsubmit="return confirm('⚠️ Are you sure you want to delete this record?')">
-                          <input type="hidden" name="delete_id" value="<?php echo (int)$row['id']; ?>">
-                          <button class="btn btn-sm btn-danger">
-                            🗑️ Delete
+        <div class="card-body p-3" style="max-height: 700px; overflow-y: auto;">
+          <?php if ($studentsResult && $studentsResult->num_rows > 0): ?>
+            <?php while($student = $studentsResult->fetch_assoc()): ?>
+              <?php
+                $usn = $student['usn'];
+                $subjectsQuery = $conn->prepare("SELECT id, subject, marks, max_marks FROM results WHERE usn = ? ORDER BY subject ASC");
+                $subjectsQuery->bind_param("s", $usn);
+                $subjectsQuery->execute();
+                $subjectsResult = $subjectsQuery->get_result();
+                $subjects = $subjectsResult->fetch_all(MYSQLI_ASSOC);
+                $subjectsQuery->close();
+                
+                $totalMarksStudent = array_sum(array_column($subjects, 'marks'));
+                $totalMaxMarks = array_sum(array_column($subjects, 'max_marks'));
+                $avgMarks = $totalMaxMarks > 0 ? round(($totalMarksStudent / $totalMaxMarks) * 100, 1) : 0;
+              ?>
+              
+              <div class="student-card" id="student-<?php echo htmlspecialchars($usn); ?>">
+                <!-- Student Header -->
+                <div class="student-header" onclick="toggleStudent('<?php echo htmlspecialchars($usn); ?>')">
+                  <div>
+                    <h6 class="mb-1 fw-bold"><?php echo htmlspecialchars($student['name']); ?></h6>
+                    <small>
+                      <strong>USN:</strong> <?php echo htmlspecialchars($usn); ?> | 
+                      <strong>Class:</strong> <?php echo htmlspecialchars($student['class'] ?? 'N/A'); ?> |
+                      <strong>Subjects:</strong> <?php echo count($subjects); ?> |
+                      <strong>Avg:</strong> <?php echo $avgMarks; ?>%
+                    </small>
+                  </div>
+                  <div>
+                    <span class="badge bg-dark"><?php echo count($subjects); ?> subjects</span>
+                  </div>
+                </div>
+                
+                <!-- Student Body (Expandable) -->
+                <div class="student-body" id="body-<?php echo htmlspecialchars($usn); ?>">
+                  <div class="row mb-3">
+                    <div class="col-md-6">
+                      <small class="text-muted">Email:</small>
+                      <div><strong><?php echo htmlspecialchars($student['email']); ?></strong></div>
+                    </div>
+                    <div class="col-md-6">
+                      <small class="text-muted">Father's Name:</small>
+                      <div><strong><?php echo htmlspecialchars($student['father_name'] ?? 'N/A'); ?></strong></div>
+                    </div>
+                  </div>
+                  
+                  <h6 class="mb-2">📚 Subjects & Marks:</h6>
+                  
+                  <?php if (count($subjects) > 0): ?>
+                    <?php foreach($subjects as $subj): ?>
+                      <?php 
+                        $mark = (int)$subj['marks'];
+                        $max_mark = (int)$subj['max_marks'];
+                        $percentage = $max_mark > 0 ? ($mark / $max_mark) * 100 : 0;
+                        $color = $percentage >= 75 ? '#10b981' : ($percentage >= 50 ? '#f59e0b' : '#ef4444');
+                      ?>
+                      <div class="subject-badge" style="border-left-color: <?php echo $color; ?>;">
+                        <div>
+                          <strong><?php echo htmlspecialchars($subj['subject']); ?></strong>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                          <span class="badge" style="background: <?php echo $color; ?>;">
+                            <?php echo $mark; ?>/<?php echo $max_mark; ?>
+                          </span>
+                          
+                          <!-- EDIT FORM -->
+                          <button class="btn btn-sm btn-warning" style="padding: 0.1rem 0.4rem; font-size: 0.75rem;" 
+                                  onclick="showEditForm(<?php echo $subj['id']; ?>, <?php echo $mark; ?>, <?php echo $max_mark; ?>)">
+                            ✏️ Edit
                           </button>
+                          
+                          <form method="post" style="display:inline;" onsubmit="return confirm('Delete this subject?')">
+                            <input type="hidden" name="delete_id" value="<?php echo (int)$subj['id']; ?>">
+                            <button type="submit" name="delete_subject" class="btn btn-sm btn-danger" style="padding: 0.1rem 0.4rem; font-size: 0.75rem;">🗑️</button>
+                          </form>
+                        </div>
+                      </div>
+                    <?php endforeach; ?>
+                    
+                    <div class="mt-3 pt-3 border-top">
+                      <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                          <strong>Total: <?php echo $totalMarksStudent; ?> / <?php echo $totalMaxMarks; ?></strong>
+                          <span class="ms-3 text-muted">Average: <?php echo $avgMarks; ?>%</span>
+                        </div>
+                        <form method="post" style="display:inline;" onsubmit="return confirm('⚠️ Delete entire student and all their marks?')">
+                          <input type="hidden" name="delete_usn" value="<?php echo htmlspecialchars($usn); ?>">
+                          <button type="submit" name="delete_student" class="btn btn-sm btn-danger">🗑️ Delete Student</button>
                         </form>
-                      </td>
-                    </tr>
-                  <?php endwhile; ?>
-                <?php else: ?>
-                  <tr>
-                    <td colspan="5" class="text-center py-5">
-                      <div style="font-size: 3rem; opacity: 0.3;">📝</div>
-                      <p class="text-muted mt-2 mb-0">No marks added yet</p>
-                      <small class="text-muted">Add your first student mark using the form</small>
-                    </td>
-                  </tr>
-                <?php endif; ?>
-              </tbody>
-            </table>
-          </div>
+                      </div>
+                    </div>
+                  <?php else: ?>
+                    <div class="no-subjects">
+                      <p>📭 No subjects added yet</p>
+                    </div>
+                  <?php endif; ?>
+                </div>
+              </div>
+            <?php endwhile; ?>
+          <?php else: ?>
+            <div class="text-center py-5">
+              <div style="font-size: 3rem; opacity: 0.2;">👥</div>
+              <p class="text-muted mt-2">No students added yet</p>
+            </div>
+          <?php endif; ?>
         </div>
       </div>
     </div>
   </div>
 </div>
 
+<!-- Edit Modal -->
+<div class="modal fade" id="editModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <div class="modal-header" style="background: linear-gradient(135deg, #d4af37 0%, #f5e6d3 100%);">
+        <h5 class="modal-title">✏️ Edit Marks</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post">
+        <div class="modal-body">
+          <input type="hidden" name="edit_id" id="edit_id">
+          <div class="mb-3">
+            <label class="form-label"><strong>New Marks</strong></label>
+            <input type="number" name="new_marks" id="new_marks" class="form-control" min="0" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label"><strong>Max Marks</strong></label>
+            <select name="new_max_marks" id="new_max_marks" class="form-control" required>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" name="edit_marks" class="btn btn-success">💾 Save Changes</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-<script src="assets/js/script.js"></script>
+<script>
+let rowCount = 3;
+function addRow() {
+  rowCount++;
+  const table = document.getElementById('marksTable');
+  const row = document.createElement('tr');
+  row.className = 'excel-row';
+  row.innerHTML = `
+    <td class="text-center">${rowCount}</td>
+    <td><input type="text" name="subject[]" class="excel-input" placeholder="Subject Name"></td>
+    <td><input type="number" name="marks[]" class="excel-input" min="0" max="100" placeholder="0-100"></td>
+    <td>
+      <select name="max_marks[]" class="excel-input">
+        <option value="50">50</option>
+        <option value="100" selected>100</option>
+      </select>
+    </td>
+    <td><button type="button" class="remove-row-btn" onclick="removeRow(this)">✕</button></td>
+  `;
+  table.appendChild(row);
+}
+
+function removeRow(btn) {
+  btn.closest('tr').remove();
+}
+
+function toggleStudent(usn) {
+  const body = document.getElementById('body-' + usn);
+  body.classList.toggle('show');
+}
+
+function showEditForm(id, currentMarks, currentMaxMarks) {
+  document.getElementById('edit_id').value = id;
+  document.getElementById('new_marks').value = currentMarks;
+  document.getElementById('new_max_marks').value = currentMaxMarks;
+  document.getElementById('new_marks').max = currentMaxMarks;
+  
+  const modal = new bootstrap.Modal(document.getElementById('editModal'));
+  modal.show();
+}
+
+// Auto-uppercase USN
+document.getElementById('usn_input').addEventListener('input', function() {
+  this.value = this.value.toUpperCase();
+});
+
+// Update marks max based on max_marks selection
+document.getElementById('new_max_marks').addEventListener('change', function() {
+  document.getElementById('new_marks').max = this.value;
+});
+</script>
 </body>
 </html>

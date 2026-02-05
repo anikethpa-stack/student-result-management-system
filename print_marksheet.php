@@ -267,9 +267,9 @@ $stmt->close();
     <!-- School Header -->
     <div class="marksheet-header">
       <div class="school-logo">🎓</div>
-      <h1 class="school-name">Your School Name Here</h1>
-      <div class="affiliation">Affiliated to CBSE  |  Affiliation Code: CBSE-777-2016</div>
-      <div class="marksheet-title">MARK SHEET FOR THE EXAMINATION SESSION 2024-25</div>
+      <h1 class="school-name">RVCE</h1>
+      <div class="affiliation"></div>
+      <div class="marksheet-title">MARK SHEET </div>
     </div>
 
     <div style="padding: 30px;">
@@ -336,7 +336,7 @@ $stmt->close();
       <div class="signature-section">
         <div class="signature-box">
           <div class="signature-line"></div>
-          <strong>VICE PRINCIPAL</strong>
+          <strong>HEAD OF DEPARTMENT(HOD)</strong>
         </div>
       </div>
 

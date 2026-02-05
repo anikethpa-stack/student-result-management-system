@@ -9,13 +9,12 @@
   <link rel="stylesheet" href="assets/css/styles.css">
   <style>
     body {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #f5e6d3 0%, #d4af37 100%);
       min-height: 100vh;
       position: relative;
       overflow: hidden;
     }
     
-    /* Animated background circles */
     body::before, body::after {
       content: '';
       position: absolute;
@@ -50,10 +49,11 @@
       background: rgba(255, 255, 255, 0.98);
       backdrop-filter: blur(20px);
       border-radius: 25px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 20px 60px rgba(212, 175, 55, 0.3);
       position: relative;
       z-index: 1;
       animation: fadeInUp 0.8s ease-out;
+      border: 3px solid rgba(212, 175, 55, 0.2);
     }
     
     @keyframes fadeInUp {
@@ -68,22 +68,24 @@
     }
     
     .logo-icon {
-      width: 80px;
-      height: 80px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      width: 100px;
+      height: 100px;
+      background: linear-gradient(135deg, #d4af37 0%, #f5e6d3 100%);
       border-radius: 20px;
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 2.5rem;
+      font-size: 3rem;
       margin: 0 auto 1rem;
-      box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+      box-shadow: 0 10px 30px rgba(212, 175, 55, 0.4);
+      border: 3px solid #d4af37;
     }
     
     .role-btn {
       position: relative;
       overflow: hidden;
       border: 2px solid transparent;
+      transition: all 0.3s ease;
     }
     
     .role-btn .icon {
@@ -92,7 +94,14 @@
     }
     
     .role-btn:hover {
-      border-color: rgba(255, 255, 255, 0.3);
+      transform: translateY(-3px);
+      box-shadow: 0 10px 30px rgba(212, 175, 55, 0.3);
+    }
+    
+    .golden-btn {
+      background: linear-gradient(135deg, #d4af37 0%, #f5e6d3 100%);
+      color: #000;
+      font-weight: 600;
     }
   </style>
 </head>
@@ -102,16 +111,16 @@
       <div class="logo-icon">
         🎓
       </div>
-      <h2 class="fw-bold mb-2" style="color: #667eea;">Student Result System</h2>
+      <h2 class="fw-bold mb-2" style="color: #8B7355;">Student Result System</h2>
       <p class="text-muted mb-0">Secure & Efficient Result Management</p>
     </div>
     
     <div class="d-grid gap-3 mt-4">
-      <a href="student_login.php" class="btn btn-primary btn-lg role-btn">
+      <a href="student_login.php" class="btn btn-lg role-btn golden-btn">
         <span class="icon">👨‍🎓</span>
         <span>Student Login</span>
       </a>
-      <a href="student_register.php" class="btn btn-outline-primary btn-lg role-btn">
+      <a href="student_register.php" class="btn btn-lg role-btn" style="background: linear-gradient(135deg, #8B7355 0%, #5D4E37 100%); color: white;">
         <span class="icon">📝</span>
         <span>Student Register</span>
       </a>

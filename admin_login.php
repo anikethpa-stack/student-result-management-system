@@ -147,6 +147,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <hr>
         
         <div class="text-center">
+          <p class="mb-3">
+            <a href="admin_forgot_password.php" class="text-decoration-none fw-bold">
+              🔑 Forgot Password?
+            </a>
+          </p>
           <div class="alert alert-info border-0 mb-3">
             <small>
               <strong>ℹ️ Default Credentials</strong><br>

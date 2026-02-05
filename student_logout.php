@@ -5,6 +5,3 @@ session_destroy();
 header("Location: student_login.php");
 exit;
 ?>
-
-// Student logout script.
-

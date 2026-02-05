@@ -7,31 +7,36 @@ $err = $info = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $usn = strtoupper(trim($_POST['usn'] ?? ''));
     $name = trim($_POST['name'] ?? '');
+    $email = trim($_POST['email'] ?? '');
+    $father_name = trim($_POST['father_name'] ?? '');
+    $class = trim($_POST['class'] ?? '');
     $pass = $_POST['password'] ?? '';
     $pass2 = $_POST['password2'] ?? '';
     
-    if ($usn === '' || $name === '' || $pass === '') {
-        $err = "All fields are required.";
+    if ($usn === '' || $name === '' || $email === '' || $pass === '') {
+        $err = "USN, Name, Email and Password are required.";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $err = "Please enter a valid email address.";
     } elseif (strlen($pass) < 6) {
         $err = "Password must be at least 6 characters long.";
     } elseif ($pass !== $pass2) {
         $err = "Passwords do not match.";
     } else {
         // Check if USN already exists
-        $stmt = $conn->prepare("SELECT id FROM students WHERE usn = ?");
-        $stmt->bind_param("s", $usn);
+        $stmt = $conn->prepare("SELECT id FROM students WHERE usn = ? OR email = ?");
+        $stmt->bind_param("ss", $usn, $email);
         $stmt->execute();
         $stmt->store_result();
         
         if ($stmt->num_rows > 0) {
-            $err = "USN already registered. Please login instead.";
+            $err = "USN or Email already registered. Please login instead.";
         } else {
             $hash = password_hash($pass, PASSWORD_DEFAULT);
-            $ins = $conn->prepare("INSERT INTO students (usn, name, password) VALUES (?, ?, ?)");
-            $ins->bind_param("sss", $usn, $name, $hash);
+            $ins = $conn->prepare("INSERT INTO students (usn, name, email, father_name, class, password) VALUES (?, ?, ?, ?, ?, ?)");
+            $ins->bind_param("ssssss", $usn, $name, $email, $father_name, $class, $hash);
             
             if ($ins->execute()) {
-                $info = "Registration successful! You can now login.";
+                $info = "Registration successful! You can now login with your Email and USN.";
             } else {
                 $err = "Failed to register: " . $conn->error;
             }
@@ -51,46 +56,34 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <link rel="stylesheet" href="assets/css/styles.css">
   <style>
     body {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #f5e6d3 0%, #d4af37 100%);
       min-height: 100vh;
     }
     .register-card {
       background: rgba(255, 255, 255, 0.98);
       backdrop-filter: blur(20px);
       border-radius: 25px;
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+      box-shadow: 0 20px 60px rgba(212, 175, 55, 0.3);
       animation: fadeInUp 0.8s ease-out;
     }
     .register-icon {
       width: 70px;
       height: 70px;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      background: linear-gradient(135deg, #d4af37 0%, #f5e6d3 100%);
       border-radius: 15px;
       display: flex;
       align-items: center;
       justify-content: center;
       font-size: 2rem;
       margin: 0 auto 1.5rem;
-      box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
-    }
-    .password-strength {
-      height: 5px;
-      background: #e2e8f0;
-      border-radius: 10px;
-      overflow: hidden;
-      margin-top: 5px;
-    }
-    .password-strength-bar {
-      height: 100%;
-      transition: all 0.3s ease;
-      width: 0%;
+      box-shadow: 0 10px 30px rgba(212, 175, 55, 0.3);
     }
   </style>
 </head>
 <body class="d-flex align-items-center justify-content-center py-5">
 <div class="container">
   <div class="row justify-content-center">
-    <div class="col-md-6">
+    <div class="col-md-7">
       <div class="register-card p-5">
         <div class="register-icon">📝</div>
         <h4 class="text-center mb-4 fw-bold">Student Registration</h4>
@@ -111,46 +104,72 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <?php endif; ?>
         
         <form method="post" novalidate id="registerForm">
-          <div class="mb-3">
-            <label class="form-label">
-              <strong>USN (University Seat Number)</strong>
-              <span class="text-danger">*</span>
-            </label>
-            <input name="usn" class="form-control form-control-lg" placeholder="e.g., 1MS21CS001" required>
-            <small class="text-muted">Enter your unique university seat number</small>
-          </div>
-          
-          <div class="mb-3">
-            <label class="form-label">
-              <strong>Full Name</strong>
-              <span class="text-danger">*</span>
-            </label>
-            <input name="name" class="form-control form-control-lg" placeholder="e.g., John Doe" required>
-          </div>
-          
-          <div class="mb-3">
-            <label class="form-label">
-              <strong>Password</strong>
-              <span class="text-danger">*</span>
-            </label>
-            <input name="password" type="password" class="form-control form-control-lg" minlength="6" placeholder="Minimum 6 characters" required id="password">
-            <div class="password-strength">
-              <div class="password-strength-bar" id="strengthBar"></div>
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">
+                <strong>USN (University Seat Number)</strong>
+                <span class="text-danger">*</span>
+              </label>
+              <input name="usn" class="form-control form-control-lg" placeholder="e.g., 1MS21CS001" required>
             </div>
-            <small class="text-muted">Use a strong password with letters and numbers</small>
+            
+            <div class="col-md-6 mb-3">
+              <label class="form-label">
+                <strong>Email Address</strong>
+                <span class="text-danger">*</span>
+              </label>
+              <input name="email" type="email" class="form-control form-control-lg" placeholder="your@email.com" required>
+            </div>
           </div>
           
-          <div class="mb-4">
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">
+                <strong>Full Name</strong>
+                <span class="text-danger">*</span>
+              </label>
+              <input name="name" class="form-control form-control-lg" placeholder="e.g., John Doe" required>
+            </div>
+            
+            <div class="col-md-6 mb-3">
+              <label class="form-label">
+                <strong>Father's Name</strong>
+              </label>
+              <input name="father_name" class="form-control form-control-lg" placeholder="Father's name">
+            </div>
+          </div>
+          
+          <div class="mb-3">
             <label class="form-label">
-              <strong>Confirm Password</strong>
-              <span class="text-danger">*</span>
+              <strong>Class</strong>
             </label>
-            <input name="password2" type="password" class="form-control form-control-lg" minlength="6" placeholder="Re-enter password" required id="password2">
-            <small class="text-muted" id="matchMessage"></small>
+            <input name="class" class="form-control form-control-lg" placeholder="e.g., 6">
+          </div>
+          
+          <div class="row">
+            <div class="col-md-6 mb-3">
+              <label class="form-label">
+                <strong>Password</strong>
+                <span class="text-danger">*</span>
+              </label>
+              <input name="password" type="password" class="form-control form-control-lg" minlength="6" placeholder="Min 6 characters" required id="password">
+              <div class="password-strength">
+                <div class="password-strength-bar" id="strengthBar"></div>
+              </div>
+            </div>
+            
+            <div class="col-md-6 mb-4">
+              <label class="form-label">
+                <strong>Confirm Password</strong>
+                <span class="text-danger">*</span>
+              </label>
+              <input name="password2" type="password" class="form-control form-control-lg" minlength="6" placeholder="Re-enter password" required id="password2">
+              <small class="text-muted" id="matchMessage"></small>
+            </div>
           </div>
           
           <div class="d-grid mb-3">
-            <button type="submit" class="btn btn-primary btn-lg">
+            <button type="submit" class="btn btn-primary btn-lg" style="background: linear-gradient(135deg, #d4af37 0%, #f5e6d3 100%); color: #000;">
               📝 Register Now
             </button>
           </div>
@@ -175,7 +194,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-// Password strength indicator
 document.getElementById('password').addEventListener('input', function() {
   const password = this.value;
   const strengthBar = document.getElementById('strengthBar');
@@ -188,18 +206,12 @@ document.getElementById('password').addEventListener('input', function() {
   
   strengthBar.style.width = strength + '%';
   
-  if (strength <= 25) {
-    strengthBar.style.background = 'linear-gradient(135deg, #eb3349 0%, #f45c43 100%)';
-  } else if (strength <= 50) {
-    strengthBar.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
-  } else if (strength <= 75) {
-    strengthBar.style.background = 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)';
-  } else {
-    strengthBar.style.background = 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)';
-  }
+  if (strength <= 25) strengthBar.style.background = 'linear-gradient(135deg, #eb3349 0%, #f45c43 100%)';
+  else if (strength <= 50) strengthBar.style.background = 'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)';
+  else if (strength <= 75) strengthBar.style.background = 'linear-gradient(135deg, #fa709a 0%, #fee140 100%)';
+  else strengthBar.style.background = 'linear-gradient(135deg, #11998e 0%, #38ef7d 100%)';
 });
 
-// Password match check
 document.getElementById('password2').addEventListener('input', function() {
   const password = document.getElementById('password').value;
   const password2 = this.value;
@@ -218,6 +230,3 @@ document.getElementById('password2').addEventListener('input', function() {
 </script>
 </body>
 </html>
-
-// Student registration page.
-

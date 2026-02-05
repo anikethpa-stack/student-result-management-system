@@ -463,3 +463,34 @@ button:focus,
   outline: 2px solid #667eea;
   outline-offset: 4px;
 }
+body {
+  background: linear-gradient(to right, #f8f9fa, #e9ecef);
+}
+
+.stat-card {
+  border-radius: 15px;
+  transition: transform 0.3s;
+}
+
+.stat-card:hover {
+  transform: translateY(-10px);
+}
+
+.card {
+  border-radius: 15px;
+}
+table tbody tr {
+  transition: background-color 0.3s, transform 0.2s;
+}
+
+table tbody tr:hover {
+  background-color: #f1f3f5;
+  transform: scale(1.01);
+}
+button {
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  transform: translateY(-2px);
+}
